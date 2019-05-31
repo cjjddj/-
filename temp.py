@@ -5,17 +5,56 @@ Spyder Editor
 This is a temporary script file.
 """
 import re
+import sqlite3
+import time
+import threading
+import sys
 
 import requests
-
+import redis
 from spider import Spider
+
+
 
 
 
 class Film:
     
+    def __init__(self):
+        
+        self.redis = redis.Redis(host = '192.168.2.107', port = '6379', password = '1', db = '5')
+        
+        self.test_db()
     ######特征函数#######
-    
+    def test_db(self):
+        conn = sqlite3.connect('film.sqlite3')
+        
+        cursor = conn.cursor()
+        
+        creart_sql = '''\
+        
+            CREATE TABLE IF NOT EXISTS film_info(
+            
+            
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    
+                    name TEXT,
+                    
+                    url  TEXT UNIQUE,
+                    
+                    update_time  TEXT,
+                    
+                    types  TEXT,
+                    
+                    status TEXT NULL
+            
+            
+            )
+        
+        '''
+        
+        cursor.execute(creart_sql)
+        conn.commit()
     def split_info(self, info_str):
         
         if '/' in info_str:#表示导演用/分割开来
@@ -141,7 +180,7 @@ class Film:
                 }
         
         regex = dict(
-        
+                
                 info = '<li><span class="tt"></span><span class="xing_vb4"><a href="(.*?)" target="_blank">(.*?)</a></span> <span class="xing_vb5">(.*?)</span> <span class="xing_vb6">(.*?)</span></li>'
                 )
         
@@ -163,7 +202,7 @@ class Film:
             
             {
             
-            type_name:'香港剧'
+            #type_name:'香港剧'
             film_list:[
                     
             
@@ -187,20 +226,41 @@ class Film:
         
         '''
         
-        pass
-    
-    def get_all_show_page(self):
+        regex = dict(
+                
+                info = '<li><span class="tt"></span><span class="xing_vb4"><a href="(.*?)" target="_blank">(.*?)</a></span> <span class="xing_vb5">(.*?)</span> <span class="xing_vb[67]">(.*?)</span></li>'
+                
+                
+                )
         
-        '''
-        return:获取 https://www.subo8988.com/ 网站所有 show_page_url
+        info = Spider().get_info(url,encoding = 'utf-8',  **regex)['info']
         
-        '''
+        info = [dict(url = i[0], name = i[1].split('&nbsp;')[0], types = i[2], update_time = i[3]) for i in info]
         
-        pass
+        
+        
+        return {'film_list': info}
+        
+        
+        
+    ##获取网站所有url
+    def get_all_show_page_url(self):
     
+        url = 'https://www.subo8988.com/?m=vod-index-pg-{}.html'
+        self.queue = [url.format(i) for i in range(1, 485)]
+        return self.queue
     
+    def get_all_show_page_url_yield(self):
+        
+        url = 'https://www.subo8988.com/?m=vod-index-pg-{}.html'     
+        for i in range(1, 485):
+            yield url.format(i)
     
     ###########功能区#######################
+    
+    
+        
+        
     
     def save_all_film_info(self):
         
@@ -216,7 +276,142 @@ class Film:
         
         
         '''
-        pass
+        
+        conn = sqlite3.connect('film.sqlite3')
+        
+        cursor = conn.cursor()
+        
+        creart_sql = '''\
+        
+            CREATE TABLE IF NOT EXISTS film_info(
+            
+            
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    
+                    name TEXT,
+                    
+                    url  TEXT UNIQUE,
+                    
+                    update_time  TEXT,
+                    
+                    types  TEXT,
+                    
+                    status TEXT NULL
+            
+            
+            )
+        
+        '''
+        
+        insert_sql = '''
+        
+            INSERT INTO film_info
+            
+            (name ,url, update_time, types)   
+            
+            VALUES       
+            
+            (?, ?, ?, ?)'''
+        
+        #  xiaohong"); drop user;
+        
+        cursor.execute(creart_sql)
+        conn.commit()
+               
+        
+        queue = self.get_all_show_page_url()
+        
+        
+        
+        for show_page_url in queue[10:20]:
+            
+            info = self.get_show_page_info(show_page_url)['film_list']
+            
+            start = time.time()
+            
+            '''
+            插入数据不能使用用迭代，能用批量插入一定要用批量
+            
+            for i in info:
+            
+                cursor.execute(insert_sql, [i['name'], i['url'], i['update_time'], i['types']])
+                
+                conn.commit()
+                
+            '''
+            
+            insert_list = [(i['name'], i['url'], i['update_time'], i['types']) for i in info]
+            
+            cursor.executemany(insert_sql, insert_list)
+            conn.commit()
+                
+            print('用时', time.time() - start)
+            
+    def work(self):
+        
+        insert_sql = '''
+        
+            INSERT INTO film_info
+            
+            (name ,url, update_time, types)   
+            
+            VALUES       
+            
+            (?, ?, ?, ?)'''
+        
+        conn = sqlite3.connect('film.sqlite3')
+            
+        cursor = conn.cursor()
+        
+        while True:
+         
+            show_page_url = self.queue.pop()
+            
+            try:
+            
+                info = self.get_show_page_info(show_page_url)['film_list']
+                
+            except requests.exceptions.ConnectionError:
+                
+                self.redis.set(show_page_url, str(sys.exc_info()))
+                
+                print('出错啦', show_page_url)
+                
+            else:
+                
+      
+                insert_list = [(i['name'], i['url'], i['update_time'], i['types']) for i in info]
+                    
+                cursor.executemany(insert_sql, insert_list)
+                
+                conn.commit()
+                
+                print(show_page_url)
+            
+    def my_thread(self):
+        
+        self.get_all_show_page_url()
+        
+        for i in range(5):
+        
+            t = threading.Thread(target = self.work)#, args = (), kwargs = {})
+            
+            t.start()
+        
+        
+        
+        
+            
+            
+        
+        
+            
+            
+            
+            
+            
+        
+        
     
     
     
@@ -224,11 +419,11 @@ class Film:
         
 if __name__ == '__main__':
     
-    url = 'https://www.subo8988.com/?m=vod-detail-id-19246.html'
+    url = 'https://www.subo8988.com/?m=vod-index-pg-2.html'
     
     x = Film()
     
-    #info = x.film_search('流浪地球')
+    x.my_thread()
     
     
         

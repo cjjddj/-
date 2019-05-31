@@ -68,6 +68,7 @@ class Spider:
             
             regex[reg] = re.findall(regex[reg], html)
             
+        
         return regex
         
         

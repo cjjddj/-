@@ -30,7 +30,6 @@ class Spider:
         
     def get_info(self,url,encoding=None,**regex):
         text=self.get_html(url,encoding=encoding)
-        print(regex)
         for reg in regex:
             regex[reg]=re.findall(regex[reg],text)
         return regex
