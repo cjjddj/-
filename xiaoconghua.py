@@ -6,7 +6,7 @@ Created on Thu May 30 08:17:01 2019
 """
 
 
-from spider_head import Spider
+from spider import Spider
 
 class XiaoCongHua:
     

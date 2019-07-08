@@ -5,6 +5,7 @@ Created on Wed May 29 14:02:58 2019
 @author: dell
 """
 import re
+import os
 import sqlite3
 import pymysql
 import time
@@ -12,8 +13,8 @@ import threading
 import sys
 import json
 import redis
-import requests
-from spider2 import Spider
+from Film135Zy import Film135Zy
+
 class FilmAction:
     '''
     def test_db() 测试数据库是否存在
@@ -21,26 +22,51 @@ class FilmAction:
     def my_thread() 开启多线程写入数据库中
     '''
     def __init__(self,film_object):
-        
+        self.config = {
+            'host': 'localhost',
+            'port': 3306,
+            'user': 'root',
+            'passwd': '',
+            'db':'aa',
+            'charset':'utf8'
+        # =============================================================================
+        # 
+        #     # 创建游标，查询获得的数据以 字典（dict） 形式返回
+        #     'cursorclass':pymysql.cursors.DictCursor
+        # =============================================================================
+            }
         self.film_object=film_object
         self.r = redis.StrictRedis(host='192.168.2.119',port='6379',decode_responses=True)
+        print('redis初始化完成')
         #支持多线程操作
-        self.conn = sqlite3.connect('film.sqlite3',check_same_thread=False)
+#        self.conn = sqlite3.connect('film.sqlite3',check_same_thread=False)
+#        self.cursor = self.conn.cursor()
+        self.conn = pymysql.connect(**self.config)
         self.cursor = self.conn.cursor()
+        print('数据库初始化完成')
         #创建锁
         self.cursor_lock=threading.Lock()
         self.test_db()
         self.iter_get_all_page_url=self.film_object.get_all_show_page_url_yield()
 
     def test_db(self):
-        create_sql='''CREATE TABLE IF NOT EXISTS film_info(
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+        create_sql = '''\
+        
+            CREATE TABLE IF NOT EXISTS film_infos(
+            
+                    id INTEGER PRIMARY KEY auto_increment,
+                    
                     name TEXT,
-                    url  TEXT UNIQUE,
+                    
+                    url  varchar(255) UNIQUE,
+                    
                     update_time  TEXT,
+                    
                     types  TEXT,
+                    
                     status TEXT NULL
-                    )'''
+            
+            )'''
         ##获取锁
         self.cursor_lock.acquire()
         
@@ -52,22 +78,29 @@ class FilmAction:
     
     def work(self):
         
-        insert_sql='''
-            insert into film_info(name,url,update_time,type) values(?,?,?,?)
-        '''
+        insert_sql = '''
+        
+            INSERT INTO film_infos
+            
+            (name ,url , update_time ,types)
+            
+            VALUES
+            
+            (%s ,%s ,%s ,%s)'''
         while True:
-            show_page_url=next(self.film_object.iter_get_all_page_url)
+            show_page_url=next(self.iter_get_all_page_url)
             try:
-                info=self.film_object.get_page_film(show_page_url)
+                info=self.film_object.get_show_page_info(show_page_url)
             except:
-                self.redis.set(show_page_url,str(sys.exc_info()))
+                self.r.set(show_page_url,str(sys.exc_info()))
                 print('出错啦',show_page_url)
             else:
-                insert_list=[(i['name'],i['url'],i['update_time'],i['types']) for i in info]
+                insert_list=[(i['href'],i['name'],i['types'],i['update_time']) for i in info['film_list']]
                 self.cursor_lock.acquire()
                 try:
                     self.cursor.executemany(insert_sql,insert_list)
-                except sqlite3.IntegrityError:
+                except pymysql.IntegrityError as err:
+                    print(err.args)
                     print(show_page_url,'已经存在')
                     self.cursor_lock.release()
                 else:
@@ -100,7 +133,7 @@ class FilmAction:
                 t.start()
         for i in threads:
             t.join()
-        self.r.set(keyword,json.dumps({'info':detail_search_list}))
+        self.r.set(keyword,json.dumps({'info':detail_search_list},ensure_ascii=False))
         return {'info':detail_search_list}
     
     def search_detail_redis(self,keyword):
@@ -108,11 +141,41 @@ class FilmAction:
             return json.loads(self.r.get(keyword))
         else:
             return self.search_detail()
-
+    
+    #获取文件夹下面的所有文件
+    def get_fileList(self,dirs,fileList):
+        files=os.listdir(dirs)
+        for file in files:
+            fileList.append(file)
+        return fileList
+    
 if __name__ == '__main__':
-    from FilmSubo8988 import FilmSubo8988
-    x=FilmAction(FilmSubo8988())
-    xiangqing=x.search_detail('倚天屠龙记')
+    
+    
+    x=FilmAction(Film135Zy())
+#    xiangqing=x.work()
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
